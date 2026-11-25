@@ -593,7 +593,7 @@
                 <a href="landing-page.html" class="sidebar-logo">
                     <span>🌱</span>
                     SeedForge
-                    <span class="sidebar-version">v1.1.0</span>
+                    <span class="sidebar-version">v1.1.1</span>
                 </a>
             </div>
             <nav class="sidebar-nav">
@@ -612,6 +612,7 @@
                     <a href="#geometric" class="nav-link">Geometric</a>
                     <a href="#special" class="nav-link">Special Generators</a>
                     <a href="#state-management" class="nav-link">State Management</a>
+                    <a href="#error-handling" class="nav-link">Error Handling</a>
                 </div>
                 <div class="nav-section">
                     <div class="nav-section-title">Noise</div>
@@ -689,7 +690,7 @@ rng.<span class="hljs-function">bool</span>(<span class="hljs-number">0.5</span>
 
 <span class="hljs-comment">// Array operations</span>
 rng.<span class="hljs-function">pick</span>([<span class="hljs-string">'a'</span>, <span class="hljs-string">'b'</span>, <span class="hljs-string">'c'</span>]);  <span class="hljs-comment">// Random element</span>
-rng.<span class="hljs-function">shuffle</span>([<span class="hljs-number">1</span>, <span class="hljs-number">2</span>, <span class="hljs-number">3</span>, <span class="hljs-number">4</span>]);   <span class="hljs-comment">// Shuffled copy</span>
+rng.<span class="hljs-function">shuffle</span>([<span class="hljs-number">1</span>, <span class="hljs-number">2</span>, <span class="hljs-number">3</span>, <span class="hljs-number">4</span>]);   <span class="hljs-comment">// Shuffles in place</span>
 
 <span class="hljs-comment">// Distributions</span>
 rng.<span class="hljs-function">normal</span>(<span class="hljs-number">100</span>, <span class="hljs-number">15</span>);   <span class="hljs-comment">// Gaussian</span>
@@ -980,7 +981,7 @@ rng.<span class="hljs-function">sign</span>();          <span class="hljs-commen
                         </div>
                         <div class="method-body">
                             <div class="method-signature">poisson(lambda: number): number</div>
-                            <p class="method-desc">Poisson distribution. Good for counting events.</p>
+                            <p class="method-desc">Poisson distribution. Good for counting events. Accurate for any <code>lambda</code>, including very large values.</p>
                         </div>
                     </div>
 
@@ -1125,7 +1126,7 @@ rng.<span class="hljs-function">hypergeometric</span>(<span class="hljs-number">
                         </div>
                         <div class="method-body">
                             <div class="method-signature">pick&lt;T&gt;(array: T[]): T</div>
-                            <p class="method-desc">Returns a random element from the array.</p>
+                            <p class="method-desc">Returns a random element from the array. Throws if the array is empty.</p>
                         </div>
                     </div>
 
@@ -1136,7 +1137,7 @@ rng.<span class="hljs-function">hypergeometric</span>(<span class="hljs-number">
                         </div>
                         <div class="method-body">
                             <div class="method-signature">sample&lt;T&gt;(array: T[], count: number): T[]</div>
-                            <p class="method-desc">Returns multiple unique random elements.</p>
+                            <p class="method-desc">Returns <code>count</code> random elements without repeats. Throws if <code>count</code> is larger than the array.</p>
                         </div>
                     </div>
 
@@ -1147,7 +1148,7 @@ rng.<span class="hljs-function">hypergeometric</span>(<span class="hljs-number">
                         </div>
                         <div class="method-body">
                             <div class="method-signature">shuffle&lt;T&gt;(array: T[]): T[]</div>
-                            <p class="method-desc">Returns a shuffled copy (Fisher-Yates algorithm).</p>
+                            <p class="method-desc">Shuffles the array in place (Fisher-Yates algorithm) and returns it. Use <code>shuffled(array)</code> to get a shuffled copy instead.</p>
                         </div>
                     </div>
 
@@ -1241,12 +1242,12 @@ rng.<span class="hljs-function">weightedPickObject</span>({
 
                     <div class="method-card">
                         <div class="method-header">
-                            <span class="method-name">.pointInRect(width, height)</span>
+                            <span class="method-name">.pointInRect(x, y, width, height)</span>
                             <span class="method-badge badge-instance">Instance</span>
                         </div>
                         <div class="method-body">
-                            <div class="method-signature">pointInRect(width: number, height: number): {x, y}</div>
-                            <p class="method-desc">Random point inside a rectangle.</p>
+                            <div class="method-signature">pointInRect(x: number, y: number, width: number, height: number): {x, y}</div>
+                            <p class="method-desc">Random point inside the rectangle whose top-left corner is (x, y).</p>
                         </div>
                     </div>
 
@@ -1265,7 +1266,7 @@ rng.<span class="hljs-function">weightedPickObject</span>({
 <span class="hljs-comment">// { x: 3.2, y: -5.1, z: 7.8 }</span>
 
 <span class="hljs-comment">// Random position in room</span>
-<span class="hljs-keyword">const</span> pos = rng.<span class="hljs-function">pointInRect</span>(<span class="hljs-number">800</span>, <span class="hljs-number">600</span>);
+<span class="hljs-keyword">const</span> pos = rng.<span class="hljs-function">pointInRect</span>(<span class="hljs-number">0</span>, <span class="hljs-number">0</span>, <span class="hljs-number">800</span>, <span class="hljs-number">600</span>);
 <span class="hljs-comment">// { x: 423.5, y: 187.2 }</span></code></pre>
                 </section>
 
@@ -1308,34 +1309,12 @@ rng.<span class="hljs-function">weightedPickObject</span>({
 
                     <div class="method-card">
                         <div class="method-header">
-                            <span class="method-name">.colorHSL(sRange?, lRange?)</span>
+                            <span class="method-name">.colorHSL(saturation?, lightness?)</span>
                             <span class="method-badge badge-instance">Instance</span>
                         </div>
                         <div class="method-body">
-                            <div class="method-signature">colorHSL(sRange?, lRange?): {h, s, l}</div>
-                            <p class="method-desc">Generates HSL color with optional saturation/lightness constraints.</p>
-                        </div>
-                    </div>
-
-                    <div class="method-card">
-                        <div class="method-header">
-                            <span class="method-name">.angle()</span>
-                            <span class="method-badge badge-instance">Instance</span>
-                        </div>
-                        <div class="method-body">
-                            <div class="method-signature">angle(): number</div>
-                            <p class="method-desc">Returns a random angle in radians [0, 2π).</p>
-                        </div>
-                    </div>
-
-                    <div class="method-card">
-                        <div class="method-header">
-                            <span class="method-name">.angleDeg()</span>
-                            <span class="method-badge badge-instance">Instance</span>
-                        </div>
-                        <div class="method-body">
-                            <div class="method-signature">angleDeg(): number</div>
-                            <p class="method-desc">Returns a random angle in degrees [0, 360).</p>
+                            <div class="method-signature">colorHSL(saturation?: number, lightness?: number): {h, s, l}</div>
+                            <p class="method-desc">Generates an HSL color with a random hue. Pass a saturation and/or lightness (0-100) to fix those values.</p>
                         </div>
                     </div>
 
@@ -1345,8 +1324,6 @@ rng.<span class="hljs-function">uuid</span>();      <span class="hljs-comment">/
 rng.<span class="hljs-function">color</span>();     <span class="hljs-comment">// '#7a3f9c'</span>
 rng.<span class="hljs-function">colorRGB</span>();  <span class="hljs-comment">// { r: 122, g: 63, b: 156 }</span>
 rng.<span class="hljs-function">colorHSL</span>();  <span class="hljs-comment">// { h: 274, s: 42, l: 43 }</span>
-rng.<span class="hljs-function">angle</span>();     <span class="hljs-comment">// 4.234 (radians)</span>
-rng.<span class="hljs-function">angleDeg</span>();  <span class="hljs-comment">// 242.5 (degrees)</span></code></pre>
                 </section>
 
                 <!-- State Management -->
@@ -1390,12 +1367,12 @@ rng.<span class="hljs-function">angleDeg</span>();  <span class="hljs-comment">/
 
                     <div class="method-card">
                         <div class="method-header">
-                            <span class="method-name">.fork(newSeed?)</span>
+                            <span class="method-name">.fork(label?)</span>
                             <span class="method-badge badge-instance">Instance</span>
                         </div>
                         <div class="method-body">
-                            <div class="method-signature">fork(newSeed?: string | number): PRNG</div>
-                            <p class="method-desc">Creates a new generator seeded from current state (for parallel streams).</p>
+                            <div class="method-signature">fork(label?: string): PRNG</div>
+                            <p class="method-desc">Creates an independent generator whose seed is derived from the current state and the label (for parallel streams).</p>
                         </div>
                     </div>
 
@@ -1425,6 +1402,54 @@ rng.<span class="hljs-function">random</span>() === rng2.<span class="hljs-funct
                         <div class="callout-content">
                             <strong>Game Saves</strong>
                             Use <code>getState()</code> and <code>setState()</code> to save/restore the exact position in the random sequence. This is essential for savegames and replay systems.
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Error Handling -->
+                <section id="error-handling">
+                    <h2><a href="#error-handling" class="anchor">#</a>Error Handling <span style="color: var(--accent); font-size: 0.8rem; vertical-align: middle;">NEW in v1.1.1</span></h2>
+
+                    <p>Invalid arguments throw a descriptive error instead of quietly returning a wrong value. A rejected call never advances the generator, so your sequence stays intact.</p>
+
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Error</th>
+                                <th>When</th>
+                                <th>Example</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>TypeError</code></td>
+                                <td>An argument has the wrong type, or is <code>NaN</code> or infinite</td>
+                                <td><code>rng.int('1', 6)</code>, <code>rng.pick(null)</code>, <code>new PRNG({})</code></td>
+                            </tr>
+                            <tr>
+                                <td><code>RangeError</code></td>
+                                <td>An argument is outside the values the method accepts</td>
+                                <td><code>rng.int(5, 1)</code>, <code>rng.pick([])</code>, <code>rng.normal(0, -1)</code></td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <pre><code><span class="hljs-keyword">const</span> rng = <span class="hljs-keyword">new</span> <span class="hljs-function">PRNG</span>(<span class="hljs-string">'errors'</span>);
+
+rng.<span class="hljs-function">int</span>(<span class="hljs-number">5</span>, <span class="hljs-number">1</span>);
+<span class="hljs-comment">// RangeError: int(): min (5) must not be greater than max (1)</span>
+
+rng.<span class="hljs-function">sample</span>([<span class="hljs-number">1</span>, <span class="hljs-number">2</span>], <span class="hljs-number">5</span>);
+<span class="hljs-comment">// RangeError: sample(): cannot take 5 items from an array of 2</span>
+
+rng.<span class="hljs-function">weightedPick</span>([<span class="hljs-string">'a'</span>, <span class="hljs-string">'b'</span>], [<span class="hljs-number">0</span>, <span class="hljs-number">0</span>]);
+<span class="hljs-comment">// RangeError: weightedPick(): at least one weight must be greater than 0</span></code></pre>
+
+                    <div class="callout callout-info">
+                        <div class="callout-icon">ℹ️</div>
+                        <div class="callout-content">
+                            <strong>Generators without a seed</strong>
+                            <code>new PRNG()</code> picks a fresh seed every time, so two unseeded generators never share a sequence. Pass a seed whenever you need reproducible results.
                         </div>
                     </div>
                 </section>
@@ -1747,8 +1772,9 @@ noise.<span class="hljs-function">warp2</span>(x * <span class="hljs-number">0.0
 &lt;/script&gt;</code></pre>
 
                     <h3>ES Modules</h3>
+                    <p>Since v1.1.1 the package ships a native ES module build, so it loads in the browser without a bundler:</p>
                     <pre><code>&lt;script type="module"&gt;
-    <span class="hljs-keyword">import</span> { PRNG, Noise } <span class="hljs-keyword">from</span> <span class="hljs-string">'https://unpkg.com/seedforge-prng/dist/seedforge.mjs'</span>;
+    <span class="hljs-keyword">import</span> { PRNG, Noise } <span class="hljs-keyword">from</span> <span class="hljs-string">'https://unpkg.com/seedforge-prng@1.1.1/dist/seedforge.mjs'</span>;
     
     <span class="hljs-keyword">const</span> rng = <span class="hljs-keyword">new</span> <span class="hljs-function">PRNG</span>(<span class="hljs-string">'seed'</span>);
 &lt;/script&gt;</code></pre>
