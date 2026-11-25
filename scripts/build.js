@@ -17,7 +17,9 @@ const srcPath = path.join(root, 'src', 'seedforge.js');
 const distDir = path.join(root, 'dist');
 const typesDir = path.join(root, 'types');
 
-const source = fs.readFileSync(srcPath, 'utf8');
+// Normalize line endings so the build gives the same output on Windows
+// (where Git may check files out with CRLF) as on macOS and Linux
+const source = fs.readFileSync(srcPath, 'utf8').replace(/\r\n/g, '\n');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 
 // The version in the source must match package.json
@@ -58,7 +60,8 @@ export default PRNG_Library;
 fs.writeFileSync(path.join(distDir, 'seedforge.mjs'), esm);
 
 // 3. Types for the ES module entry
-fs.copyFileSync(path.join(typesDir, 'seedforge.d.ts'), path.join(typesDir, 'seedforge.d.mts'));
+const types = fs.readFileSync(path.join(typesDir, 'seedforge.d.ts'), 'utf8').replace(/\r\n/g, '\n');
+fs.writeFileSync(path.join(typesDir, 'seedforge.d.mts'), types);
 
 console.log(`Built SeedForge ${pkg.version}`);
 for (const file of ['dist/seedforge.js', 'dist/seedforge.mjs', 'types/seedforge.d.mts']) {
