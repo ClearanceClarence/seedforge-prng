@@ -1,4 +1,4 @@
-// Type definitions for SeedForge
+// Type definitions for SeedForge 1.1.1
 // Project: SeedForge
 // Definitions by: SeedForge Contributors
 
@@ -274,11 +274,15 @@ export namespace Utils {
     export function splitmix64(seed: number): () => number;
 }
 
+/** Library version, e.g. "1.1.1" */
+export const version: string;
+
 export function create(seed?: string | number, algorithm?: AlgorithmName): PRNG;
-export function seed(seed: string | number, algorithm?: AlgorithmName): typeof import('./seedforge');
+export function seed(seed: string | number, algorithm?: AlgorithmName): SeedForgeLibrary;
 export function random(): number;
 
-declare const _default: {
+export interface SeedForgeLibrary {
+    version: string;
     PRNG: typeof PRNG;
     Algorithms: typeof Algorithms;
     Noise: typeof Noise;
@@ -286,6 +290,8 @@ declare const _default: {
     create: typeof create;
     seed: typeof seed;
     random: typeof random;
-};
+}
+
+declare const _default: SeedForgeLibrary;
 
 export default _default;

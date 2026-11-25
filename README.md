@@ -8,6 +8,8 @@ A comprehensive, seedable PRNG library featuring multiple algorithms, statistica
 [![npm downloads](https://img.shields.io/npm/dm/seedforge-prng.svg)](https://www.npmjs.com/package/seedforge-prng)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+**Current Version: 1.1.1**
+
 ---
 
 ## Table of Contents
@@ -23,6 +25,7 @@ A comprehensive, seedable PRNG library featuring multiple algorithms, statistica
   - [Geometric Utilities](#geometric-utilities)
   - [Special Generators](#special-generators)
   - [State Management](#state-management)
+  - [Error Handling](#error-handling)
   - [Noise Generators](#noise-generators)
 - [Usage Examples](#usage-examples)
   - [Procedural Terrain Generation](#procedural-terrain-generation)
@@ -70,7 +73,13 @@ npm install seedforge-prng
 ### Browser (CDN)
 
 ```html
+<!-- Classic script: exposes the global `PRNG` object -->
 <script src="https://unpkg.com/seedforge-prng/dist/seedforge.js"></script>
+
+<!-- ES module: no bundler needed -->
+<script type="module">
+    import { PRNG } from 'https://unpkg.com/seedforge-prng@1.1.1/dist/seedforge.mjs';
+</script>
 ```
 
 ### Manual Download
@@ -99,6 +108,8 @@ import { PRNG } from 'seedforge-prng';
 const rng = new PRNG('my-seed');
 console.log(rng.random());
 ```
+
+Named imports work natively in Node.js, in bundlers, and in the browser. The package ships both a CommonJS build (`dist/seedforge.js`) and an ES module build (`dist/seedforge.mjs`), and they produce identical output.
 
 ### Browser
 
@@ -192,7 +203,12 @@ const rng = new PRNG('my-seed', 'pcg32');
 // Change seed later
 rng.setSeed('new-seed');
 rng.setSeed('new-seed', 'sfc32'); // Also change algorithm
+
+// Without a seed: a fresh, unique seed is chosen every time
+const unseeded = new PRNG();
 ```
+
+> 💡 A generator created without a seed is not reproducible across runs. Pass a seed whenever you need the same sequence again.
 
 ---
 
@@ -292,6 +308,9 @@ rng.poisson(4);   // 3, 5, 4, 2, 6...
 
 // Average 10 events
 rng.poisson(10);  // 8, 11, 10, 12, 9...
+
+// Large averages are fine too
+rng.poisson(5000);  // 4987, 5066, 4921...
 ```
 
 **Use cases:** Number of enemies in an encounter, items in a chest, events per time period.
@@ -462,17 +481,17 @@ rng.studentT(30);     // 0.28, -0.67, 1.04, -0.18...
 **Use cases:** Confidence intervals, hypothesis testing, small sample analysis.
 
 #### `vonMises(mu, kappa)` → `number` *(New in v1.1.0)*
-Von Mises distribution for circular/directional data. Returns angle in radians [0, 2π].
+Von Mises distribution for circular/directional data. Returns an angle in radians in the range [-π, π).
 
 ```javascript
 // Concentrated around 0 (East)
-rng.vonMises(0, 5);           // 0.12, -0.08, 0.23, 6.18...
+rng.vonMises(0, 5);           // 0.12, -0.08, 0.23, -0.31...
 
 // Concentrated around π/2 (North)
 rng.vonMises(Math.PI/2, 3);   // 1.47, 1.62, 1.38, 1.71...
 
 // Low concentration (nearly uniform)
-rng.vonMises(0, 0.5);         // 2.84, 0.47, 5.12, 3.91...
+rng.vonMises(0, 0.5);         // 2.84, 0.47, -1.16, -2.37...
 ```
 
 **Use cases:** Wind direction, compass bearings, time of day (circular), animal migration angles.
@@ -517,7 +536,7 @@ console.log(shuffled);  // [3, 1, 5, 2, 4] (new array)
 ```
 
 #### `pick(array)` → `element`
-Returns a random element from the array.
+Returns a random element from the array. Throws a `RangeError` if the array is empty.
 
 ```javascript
 const items = ['sword', 'shield', 'potion', 'scroll'];
@@ -527,7 +546,7 @@ rng.pick(items);  // 'potion'
 ```
 
 #### `sample(array, n)` → `array`
-Returns n random elements without replacement (no duplicates).
+Returns n random elements without replacement (no duplicates). Throws a `RangeError` if n is larger than the array.
 
 ```javascript
 const pool = ['a', 'b', 'c', 'd', 'e', 'f'];
@@ -811,6 +830,40 @@ forestRng.random();   // Different sequence
 const worldRng2 = new PRNG('world-42');
 const terrainRng2 = worldRng2.fork('terrain');
 terrainRng2.random(); // Identical to terrainRng!
+```
+
+---
+
+### Error Handling
+
+Invalid arguments throw a descriptive error instead of quietly returning a wrong value.
+
+| Error | When | Examples |
+|-------|------|----------|
+| `TypeError` | An argument has the wrong type, or is `NaN` or infinite | `rng.int('1', 6)`, `rng.pick(null)`, `new PRNG({})` |
+| `RangeError` | An argument is outside the values the method accepts | `rng.int(5, 1)`, `rng.pick([])`, `rng.normal(0, -1)` |
+
+```javascript
+rng.int(5, 1);
+// RangeError: int(): min (5) must not be greater than max (1)
+
+rng.sample([1, 2], 5);
+// RangeError: sample(): cannot take 5 items from an array of 2
+
+rng.weightedPick(['a', 'b'], [0, 0]);
+// RangeError: weightedPick(): at least one weight must be greater than 0
+```
+
+A rejected call never advances the generator, so catching the error leaves your sequence intact:
+
+```javascript
+const rng = new PRNG('safe');
+
+try {
+    rng.pick([]);
+} catch (error) {
+    // The next value is the same as if pick([]) had never been called
+}
 ```
 
 ---
@@ -1679,6 +1732,17 @@ const rng = new PRNG('seed');
 const noise = new Noise.SimplexNoise('seed');
 ```
 
+### ES Module (no bundler)
+
+```html
+<script type="module">
+    import { PRNG, Noise } from 'https://unpkg.com/seedforge-prng@1.1.1/dist/seedforge.mjs';
+
+    const rng = new PRNG('seed');
+    const noise = new Noise.SimplexNoise('seed');
+</script>
+```
+
 ---
 
 ## TypeScript Support
@@ -1707,12 +1771,17 @@ const turb: number = noise.turbulence(1.5, 2.3, null, 6);
 ### Node.js
 
 ```bash
-# Run test suite
+# Build dist/ from src/ and run the full test suite
 npm test
+
+# Build only
+npm run build
 
 # Run examples
 npm run example
 ```
+
+The suite covers reproducibility, statistical correctness (every distribution is checked against its theoretical mean and variance), input validation, output stability across versions, and the ES module build.
 
 ### Browser
 
@@ -1753,6 +1822,29 @@ Contributions are welcome! Please feel free to submit issues and pull requests.
 ---
 
 ## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for the full history.
+
+### 1.1.1
+
+A bug-fix release. Output for a given seed is unchanged, except for `pcg32` (see below).
+
+**Fixed:**
+- `import { PRNG } from 'seedforge-prng'` now works in Node.js. The package ships a real ES module build (`dist/seedforge.mjs`) and an `exports` map
+- `poisson()` returned values capped near 709 for large `lambda`; it is now accurate for any `lambda`
+- `pcg32` produced heavily skewed output; it now matches the PCG reference implementation
+- Generators created without a seed in the same millisecond were identical; each now gets a unique seed
+- `geometric(1)` returned 0 instead of 1
+- `vonMises()` could return values outside [-π, π) for a negative `mu`
+- Invalid arguments now throw a `TypeError` or `RangeError` instead of returning `NaN`, `undefined` or a wrong value
+
+**Changed:**
+- `pcg32` sequences differ from 1.1.0, because the old output was not uniformly distributed. All other algorithms are unchanged
+- Minimum Node.js version is now 14 (the code already required it)
+
+**Added:**
+- `version` export
+- Statistical, validation and ES module tests (39 → 156 checks)
 
 ### 1.1.0
 

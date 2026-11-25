@@ -20,6 +20,7 @@ logo-icon.png
 
 # Source (only dist is needed)
 src/
+scripts/
 
 # Git
 .git/

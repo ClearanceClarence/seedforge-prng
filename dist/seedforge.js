@@ -3,7 +3,7 @@
  * A comprehensive pseudo-random number generator library with multiple algorithms,
  * statistical distributions, and utility functions for procedural generation.
  * 
- * @version 1.1.0
+ * @version 1.1.1
  * @license MIT
  */
 
@@ -70,6 +70,98 @@
         };
     }
 
+    /**
+     * Generate a seed for generators created without one.
+     * Mixes the clock, a per-call counter and Math.random() so that generators
+     * created in the same millisecond still get different seeds.
+     * @returns {number} 32-bit unsigned integer seed
+     */
+    let autoSeedCounter = 0;
+    function autoSeed() {
+        autoSeedCounter = (autoSeedCounter + 0x9e3779b9) >>> 0;
+        let h = (Date.now() ^ autoSeedCounter) >>> 0;
+        h = Math.imul(h ^ (h >>> 16), 0x85ebca6b);
+        h ^= (Math.random() * 4294967296) >>> 0;
+        h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+        return (h ^ (h >>> 16)) >>> 0;
+    }
+
+    // ============================================================
+    // INTERNAL HELPERS
+    // ============================================================
+
+    function describe(value) {
+        if (typeof value === 'string') return JSON.stringify(value);
+        if (Array.isArray(value)) return 'an array';
+        if (value === null) return 'null';
+        if (typeof value === 'object' || typeof value === 'function') return 'a ' + typeof value;
+        return String(value);
+    }
+
+    function isFiniteNumber(value) {
+        return typeof value === 'number' && Number.isFinite(value);
+    }
+
+    function assertFinite(value, name, method) {
+        if (!isFiniteNumber(value)) {
+            throw new TypeError(`${method}: ${name} must be a finite number, got ${describe(value)}`);
+        }
+    }
+
+    function assertPositive(value, name, method) {
+        assertFinite(value, name, method);
+        if (value <= 0) {
+            throw new RangeError(`${method}: ${name} must be greater than 0, got ${value}`);
+        }
+    }
+
+    function assertNonNegative(value, name, method) {
+        assertFinite(value, name, method);
+        if (value < 0) {
+            throw new RangeError(`${method}: ${name} must not be negative, got ${value}`);
+        }
+    }
+
+    function assertCount(value, name, method) {
+        if (!Number.isInteger(value) || value < 0) {
+            throw new RangeError(`${method}: ${name} must be a non-negative integer, got ${describe(value)}`);
+        }
+    }
+
+    function assertProbability(value, name, method) {
+        assertFinite(value, name, method);
+        if (value < 0 || value > 1) {
+            throw new RangeError(`${method}: ${name} must be between 0 and 1, got ${value}`);
+        }
+    }
+
+    function assertArrayLike(value, name, method) {
+        const ok = typeof value === 'string' ||
+            (value !== null && typeof value === 'object' && Number.isInteger(value.length) && value.length >= 0);
+        if (!ok) {
+            throw new TypeError(`${method}: ${name} must be an array, got ${describe(value)}`);
+        }
+    }
+
+    /**
+     * Natural log of the gamma function (Lanczos approximation), for x > 0
+     */
+    const LANCZOS = [
+        0.99999999999980993, 676.5203681218851, -1259.1392167224028,
+        771.32342877765313, -176.61502916214059, 12.507343278686905,
+        -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7
+    ];
+    function logGamma(x) {
+        x -= 1;
+        let a = LANCZOS[0];
+        const t = x + 7.5;
+        for (let i = 1; i < 9; i++) a += LANCZOS[i] / (x + i);
+        return 0.5 * Math.log(2 * Math.PI) + (x + 0.5) * Math.log(t) - t + Math.log(a);
+    }
+
+    // Above this mean, poisson() switches from Knuth's method to transformed rejection
+    const POISSON_REJECTION_THRESHOLD = 500;
+
     // ============================================================
     // PRNG ALGORITHMS
     // ============================================================
@@ -79,7 +171,7 @@
      * Period: ~2^32, suitable for games and simple applications
      */
     class Mulberry32 {
-        constructor(seed = Date.now()) {
+        constructor(seed = autoSeed()) {
             this.name = 'mulberry32';
             this.seed = typeof seed === 'string' ? stringToSeed(seed) : seed >>> 0;
             this.state = this.seed;
@@ -124,7 +216,7 @@
      * Period: 2^128 - 1, excellent statistical properties
      */
     class Xoshiro128SS {
-        constructor(seed = Date.now()) {
+        constructor(seed = autoSeed()) {
             this.name = 'xoshiro128**';
             this.originalSeed = seed;
             
@@ -215,7 +307,7 @@
      * Period: 2^128 - 1
      */
     class Xorshift128Plus {
-        constructor(seed = Date.now()) {
+        constructor(seed = autoSeed()) {
             this.name = 'xorshift128+';
             this.originalSeed = seed;
             
@@ -289,7 +381,7 @@
      * This is a 32-bit optimized version
      */
     class PCG32 {
-        constructor(seed = Date.now(), sequence = 1) {
+        constructor(seed = autoSeed(), sequence = 1) {
             this.name = 'pcg32';
             this.originalSeed = seed;
             this.originalSequence = sequence;
@@ -300,7 +392,7 @@
             this.stateHi = 0;
             this.stateLo = 0;
             this.incHi = 0;
-            this.incLo = (sequence << 1) | 1;
+            this.incLo = ((sequence << 1) | 1) >>> 0;
             
             // Warm up
             this.nextInt();
@@ -316,49 +408,48 @@
             this.stateHi = (this.stateHi + hi + carry) >>> 0;
         }
 
-        // Multiply state by the LCG multiplier (6364136223846793005)
-        // Multiplier in 32-bit parts: 0x5851F42D, 0x4C957F2D
+        // Multiply the 64-bit state by the LCG multiplier 6364136223846793005
+        // (0x5851F42D4C957F2D), keeping the low 64 bits. The state is held as two
+        // unsigned 32-bit halves, so the product is built from 16-bit pieces to
+        // stay exact within double precision.
         _multiply() {
             const multHi = 0x5851F42D;
             const multLo = 0x4C957F2D;
-            
-            // 64-bit multiplication using 32-bit parts
-            const a = this.stateLo >>> 16;
-            const b = this.stateLo & 0xFFFF;
-            const c = multLo >>> 16;
-            const d = multLo & 0xFFFF;
-            
-            let low = b * d;
-            let mid1 = a * d;
-            let mid2 = b * c;
-            let high = a * c;
-            
-            mid1 += low >>> 16;
-            mid1 += mid2;
-            if (mid1 < mid2) high += 0x10000;
-            
-            const newLo = (low & 0xFFFF) | ((mid1 & 0xFFFF) << 16);
-            const newHi = high + (mid1 >>> 16);
-            
-            // Add cross terms for high part
-            const crossHi = (this.stateLo * multHi + this.stateHi * multLo) >>> 0;
-            
-            this.stateLo = newLo >>> 0;
-            this.stateHi = (newHi + crossHi) >>> 0;
+            const lo = this.stateLo;
+
+            const a0 = lo & 0xFFFF;
+            const a1 = lo >>> 16;
+            const b0 = multLo & 0xFFFF;
+            const b1 = multLo >>> 16;
+
+            const p00 = a0 * b0;
+            const p01 = a0 * b1;
+            const p10 = a1 * b0;
+            const p11 = a1 * b1;
+
+            // High 32 bits of stateLo * multLo
+            const mid = (p00 >>> 16) + (p01 & 0xFFFF) + (p10 & 0xFFFF);
+            const carry = p11 + (p01 >>> 16) + (p10 >>> 16) + (mid >>> 16);
+
+            this.stateHi = (carry + Math.imul(lo, multHi) + Math.imul(this.stateHi, multLo)) >>> 0;
+            this.stateLo = Math.imul(lo, multLo) >>> 0;
         }
 
         nextInt() {
             const oldHi = this.stateHi;
             const oldLo = this.stateLo;
-            
+
             // Advance state: state = state * mult + inc
             this._multiply();
             this._add64(this.incLo, this.incHi);
-            
-            // Calculate output using xorshift and rotation
-            const xorshifted = (((oldHi >>> 18) ^ oldHi) >>> 27) ^ (oldLo >>> 27);
+
+            // Output function XSH-RR on the old 64-bit state:
+            //   xorshifted = uint32(((old >> 18) ^ old) >> 27), rot = old >> 59
+            const xHi = (oldHi ^ (oldHi >>> 18)) >>> 0;
+            const xLo = (oldLo ^ ((oldLo >>> 18) | (oldHi << 14))) >>> 0;
+            const xorshifted = ((xLo >>> 27) | (xHi << 5)) >>> 0;
             const rot = oldHi >>> 27;
-            
+
             return ((xorshifted >>> rot) | (xorshifted << ((-rot) & 31))) >>> 0;
         }
 
@@ -394,7 +485,7 @@
             this.stateHi = 0;
             this.stateLo = 0;
             this.incHi = 0;
-            this.incLo = (this.originalSequence << 1) | 1;
+            this.incLo = ((this.originalSequence << 1) | 1) >>> 0;
             
             this.nextInt();
             this._add64(numSeed, 0);
@@ -416,7 +507,7 @@
      * Period: ~2^128
      */
     class SFC32 {
-        constructor(seed = Date.now()) {
+        constructor(seed = autoSeed()) {
             this.name = 'sfc32';
             this.originalSeed = seed;
             
@@ -476,7 +567,7 @@
      * Included for educational purposes and compatibility
      */
     class LCG {
-        constructor(seed = Date.now(), a = 1664525, c = 1013904223, m = 4294967296) {
+        constructor(seed = autoSeed(), a = 1664525, c = 1013904223, m = 4294967296) {
             this.name = 'lcg';
             this.seed = typeof seed === 'string' ? stringToSeed(seed) : seed >>> 0;
             this.state = this.seed;
@@ -523,7 +614,7 @@
          * @param {string|number} seed - Seed value (string or number)
          * @param {string} algorithm - Algorithm name: 'mulberry32', 'xoshiro128', 'xorshift128', 'pcg32', 'sfc32', 'lcg'
          */
-        constructor(seed = Date.now(), algorithm = 'xoshiro128') {
+        constructor(seed = autoSeed(), algorithm = 'xoshiro128') {
             this.setSeed(seed, algorithm);
         }
 
@@ -531,6 +622,15 @@
          * Set or change the seed and optionally the algorithm
          */
         setSeed(seed, algorithm = this.generator?.name || 'xoshiro128') {
+            if (seed === undefined) {
+                seed = autoSeed();
+            } else if (typeof seed !== 'string' && !isFiniteNumber(seed)) {
+                throw new TypeError(`PRNG: seed must be a string or a finite number, got ${describe(seed)}`);
+            }
+            if (typeof algorithm !== 'string') {
+                throw new TypeError(`PRNG: algorithm must be a string, got ${describe(algorithm)}`);
+            }
+
             switch (algorithm.toLowerCase()) {
                 case 'mulberry32':
                 case 'mulberry':
@@ -588,6 +688,8 @@
          * Generate a random float in [min, max)
          */
         float(min = 0, max = 1) {
+            assertFinite(min, 'min', 'float()');
+            assertFinite(max, 'max', 'float()');
             return min + this.random() * (max - min);
         }
 
@@ -595,8 +697,18 @@
          * Generate a random integer in [min, max] (inclusive)
          */
         int(min, max) {
-            min = Math.ceil(min);
-            max = Math.floor(max);
+            assertFinite(min, 'min', 'int()');
+            assertFinite(max, 'max', 'int()');
+            if (min > max) {
+                throw new RangeError(`int(): min (${min}) must not be greater than max (${max})`);
+            }
+            const lo = Math.ceil(min);
+            const hi = Math.floor(max);
+            if (lo > hi) {
+                throw new RangeError(`int(): there is no integer between ${min} and ${max}`);
+            }
+            min = lo;
+            max = hi;
             return Math.floor(this.random() * (max - min + 1)) + min;
         }
 
@@ -624,6 +736,9 @@
          * @param {number} stdDev - Standard deviation
          */
         normal(mean = 0, stdDev = 1) {
+            assertFinite(mean, 'mean', 'normal()');
+            assertNonNegative(stdDev, 'stdDev', 'normal()');
+
             if (this._hasSpareNormal) {
                 this._hasSpareNormal = false;
                 return this._spareNormal * stdDev + mean;
@@ -648,6 +763,7 @@
          * @param {number} lambda - Rate parameter (1/mean)
          */
         exponential(lambda = 1) {
+            assertPositive(lambda, 'lambda', 'exponential()');
             return -Math.log(1 - this.random()) / lambda;
         }
 
@@ -656,6 +772,13 @@
          * @param {number} lambda - Average number of events
          */
         poisson(lambda) {
+            assertNonNegative(lambda, 'lambda', 'poisson()');
+
+            if (lambda >= POISSON_REJECTION_THRESHOLD) {
+                return this._poissonLarge(lambda);
+            }
+
+            // Knuth's method: exact, but exp(-lambda) underflows for large lambda
             const L = Math.exp(-lambda);
             let k = 0;
             let p = 1;
@@ -669,11 +792,42 @@
         }
 
         /**
+         * Poisson sampling for large lambda using Hörmann's transformed
+         * rejection method (PTRS). Constant time regardless of lambda.
+         * @private
+         */
+        _poissonLarge(lambda) {
+            const logLambda = Math.log(lambda);
+            const b = 0.931 + 2.53 * Math.sqrt(lambda);
+            const a = -0.059 + 0.02483 * b;
+            const invAlpha = 1.1239 + 1.1328 / (b - 3.4);
+            const vr = 0.9277 - 3.6224 / (b - 2);
+
+            while (true) {
+                const u = this.random() - 0.5;
+                const v = this.random();
+                const us = 0.5 - Math.abs(u);
+                const k = Math.floor((2 * a / us + b) * u + lambda + 0.43);
+
+                if (us >= 0.07 && v <= vr) return k;
+                if (k < 0 || (us < 0.013 && v > us)) continue;
+
+                if (Math.log(v) + Math.log(invAlpha) - Math.log(a / (us * us) + b)
+                    <= -lambda + k * logLambda - logGamma(k + 1)) {
+                    return k;
+                }
+            }
+        }
+
+        /**
          * Binomial distribution
          * @param {number} n - Number of trials
          * @param {number} p - Probability of success
          */
         binomial(n, p) {
+            assertCount(n, 'n', 'binomial()');
+            assertProbability(p, 'p', 'binomial()');
+
             let successes = 0;
             for (let i = 0; i < n; i++) {
                 if (this.random() < p) successes++;
@@ -687,6 +841,8 @@
          * @param {number} xm - Scale parameter (minimum value)
          */
         pareto(alpha = 1, xm = 1) {
+            assertPositive(alpha, 'alpha', 'pareto()');
+            assertPositive(xm, 'xm', 'pareto()');
             return xm / Math.pow(1 - this.random(), 1 / alpha);
         }
 
@@ -698,8 +854,8 @@
         beta(alpha, beta) {
             // Using Jöhnk's algorithm for alpha, beta < 1
             // and rejection method otherwise
-            if (alpha <= 0 || beta <= 0) {
-                throw new Error('Alpha and beta must be positive');
+            if (!isFiniteNumber(alpha) || !isFiniteNumber(beta) || alpha <= 0 || beta <= 0) {
+                throw new RangeError('Alpha and beta must be positive');
             }
 
             const gamma1 = this.gamma(alpha, 1);
@@ -713,6 +869,9 @@
          * @param {number} scale - Scale parameter (θ)
          */
         gamma(shape, scale = 1) {
+            assertPositive(shape, 'shape', 'gamma()');
+            assertPositive(scale, 'scale', 'gamma()');
+
             if (shape < 1) {
                 return this.gamma(1 + shape, scale) * Math.pow(this.random(), 1 / shape);
             }
@@ -747,6 +906,16 @@
          * @param {number} mode - Most likely value
          */
         triangular(min = 0, max = 1, mode = 0.5) {
+            assertFinite(min, 'min', 'triangular()');
+            assertFinite(max, 'max', 'triangular()');
+            assertFinite(mode, 'mode', 'triangular()');
+            if (min >= max) {
+                throw new RangeError(`triangular(): min (${min}) must be less than max (${max})`);
+            }
+            if (mode < min || mode > max) {
+                throw new RangeError(`triangular(): mode (${mode}) must be between min (${min}) and max (${max})`);
+            }
+
             const u = this.random();
             const fc = (mode - min) / (max - min);
             
@@ -772,6 +941,8 @@
          * @param {number} shape - Shape parameter (k)
          */
         weibull(scale = 1, shape = 1) {
+            assertPositive(scale, 'scale', 'weibull()');
+            assertPositive(shape, 'shape', 'weibull()');
             return scale * Math.pow(-Math.log(1 - this.random()), 1 / shape);
         }
 
@@ -781,6 +952,8 @@
          * @param {number} scale - Scale parameter
          */
         cauchy(location = 0, scale = 1) {
+            assertFinite(location, 'location', 'cauchy()');
+            assertPositive(scale, 'scale', 'cauchy()');
             return location + scale * Math.tan(Math.PI * (this.random() - 0.5));
         }
 
@@ -790,10 +963,12 @@
          * @returns {number} Number of trials (1, 2, 3, ...)
          */
         geometric(p) {
-            if (p <= 0 || p > 1) {
-                throw new Error('Probability must be in (0, 1]');
+            if (!isFiniteNumber(p) || p <= 0 || p > 1) {
+                throw new RangeError('Probability must be in (0, 1]');
             }
-            return Math.ceil(Math.log(1 - this.random()) / Math.log(1 - p));
+            const u = this.random();
+            if (p === 1) return 1; // Success is certain on the first trial
+            return Math.max(1, Math.ceil(Math.log(1 - u) / Math.log(1 - p)));
         }
 
         /**
@@ -803,8 +978,8 @@
          * @returns {number} Rank from 1 to n
          */
         zipf(n, s = 1) {
-            if (n < 1) throw new Error('n must be >= 1');
-            if (s < 0) throw new Error('s must be >= 0');
+            if (!Number.isInteger(n) || n < 1) throw new RangeError('n must be an integer >= 1');
+            if (!isFiniteNumber(s) || s < 0) throw new RangeError('s must be >= 0');
             
             // Calculate normalization constant (generalized harmonic number)
             let hns = 0;
@@ -827,7 +1002,7 @@
          * @returns {number} Chi-squared distributed value
          */
         chiSquared(k) {
-            if (k < 1) throw new Error('Degrees of freedom must be >= 1');
+            if (!isFiniteNumber(k) || k < 1) throw new RangeError('Degrees of freedom must be >= 1');
             // Chi-squared is a special case of gamma distribution
             return this.gamma(k / 2, 2);
         }
@@ -838,7 +1013,7 @@
          * @returns {number} t-distributed value
          */
         studentT(df) {
-            if (df <= 0) throw new Error('Degrees of freedom must be positive');
+            if (!isFiniteNumber(df) || df <= 0) throw new RangeError('Degrees of freedom must be positive');
             // t = Z / sqrt(V/df) where Z ~ N(0,1) and V ~ chi-squared(df)
             const z = this.normal();
             const v = this.chiSquared(df);
@@ -849,10 +1024,11 @@
          * Von Mises distribution - circular/directional distribution
          * @param {number} mu - Mean direction in radians
          * @param {number} kappa - Concentration parameter (0 = uniform, higher = more concentrated)
-         * @returns {number} Angle in radians [-π, π]
+         * @returns {number} Angle in radians in [-π, π)
          */
         vonMises(mu = 0, kappa = 1) {
-            if (kappa < 0) throw new Error('Kappa must be non-negative');
+            assertFinite(mu, 'mu', 'vonMises()');
+            if (!isFiniteNumber(kappa) || kappa < 0) throw new RangeError('Kappa must be non-negative');
             
             if (kappa === 0) {
                 // Uniform distribution on circle
@@ -874,7 +1050,10 @@
                 if (u2 < c * (2 - c) || u2 <= c * Math.exp(1 - c)) {
                     const u3 = this.random();
                     const theta = (u3 > 0.5) ? Math.acos(f) : -Math.acos(f);
-                    return ((theta + mu + Math.PI) % (2 * Math.PI)) - Math.PI;
+                    // Wrap into [-π, π), including for negative mu
+                    let wrapped = (theta + mu + Math.PI) % (2 * Math.PI);
+                    if (wrapped < 0) wrapped += 2 * Math.PI;
+                    return wrapped - Math.PI;
                 }
             }
         }
@@ -887,9 +1066,10 @@
          * @returns {number} Number of successes in the sample
          */
         hypergeometric(N, K, n) {
-            if (N < 0 || K < 0 || n < 0) throw new Error('Parameters must be non-negative');
-            if (K > N) throw new Error('K cannot exceed N');
-            if (n > N) throw new Error('n cannot exceed N');
+            if (![N, K, n].every(Number.isInteger)) throw new RangeError('Parameters must be integers');
+            if (N < 0 || K < 0 || n < 0) throw new RangeError('Parameters must be non-negative');
+            if (K > N) throw new RangeError('K cannot exceed N');
+            if (n > N) throw new RangeError('n cannot exceed N');
             
             let successes = 0;
             let population = N;
@@ -916,6 +1096,9 @@
          * @returns {Array} The shuffled array
          */
         shuffle(array) {
+            if (array === null || typeof array !== 'object' || !Number.isInteger(array.length)) {
+                throw new TypeError(`shuffle(): array must be an array, got ${describe(array)}`);
+            }
             for (let i = array.length - 1; i > 0; i--) {
                 const j = this.int(0, i);
                 [array[i], array[j]] = [array[j], array[i]];
@@ -927,6 +1110,7 @@
          * Return a shuffled copy of an array
          */
         shuffled(array) {
+            assertArrayLike(array, 'array', 'shuffled()');
             return this.shuffle([...array]);
         }
 
@@ -934,7 +1118,10 @@
          * Pick a random element from an array
          */
         pick(array) {
-            if (array.length === 0) return undefined;
+            assertArrayLike(array, 'array', 'pick()');
+            if (array.length === 0) {
+                throw new RangeError('pick(): cannot pick from an empty array');
+            }
             return array[this.int(0, array.length - 1)];
         }
 
@@ -942,8 +1129,13 @@
          * Pick n random elements from an array (without replacement)
          */
         sample(array, n) {
+            assertArrayLike(array, 'array', 'sample()');
+            assertCount(n, 'n', 'sample()');
+            if (n > array.length) {
+                throw new RangeError(`sample(): cannot take ${n} items from an array of ${array.length}`);
+            }
             const shuffled = this.shuffled(array);
-            return shuffled.slice(0, Math.min(n, array.length));
+            return shuffled.slice(0, n);
         }
 
         /**
@@ -952,11 +1144,24 @@
          * @param {Array<number>} weights - Array of weights (same length as items)
          */
         weightedPick(items, weights) {
+            assertArrayLike(items, 'items', 'weightedPick()');
+            assertArrayLike(weights, 'weights', 'weightedPick()');
             if (items.length !== weights.length) {
-                throw new Error('Items and weights must have same length');
+                throw new RangeError('Items and weights must have same length');
+            }
+            if (items.length === 0) {
+                throw new RangeError('weightedPick(): cannot pick from an empty array');
+            }
+            for (let i = 0; i < weights.length; i++) {
+                if (!isFiniteNumber(weights[i]) || weights[i] < 0) {
+                    throw new RangeError(`weightedPick(): weights must be non-negative numbers, got ${describe(weights[i])} at index ${i}`);
+                }
             }
 
             const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+            if (totalWeight <= 0) {
+                throw new RangeError('weightedPick(): at least one weight must be greater than 0');
+            }
             let random = this.random() * totalWeight;
 
             for (let i = 0; i < items.length; i++) {
@@ -972,6 +1177,9 @@
          * @param {Object} weightedItems - Object with items as keys and weights as values
          */
         weightedPickObject(weightedItems) {
+            if (weightedItems === null || typeof weightedItems !== 'object' || Array.isArray(weightedItems)) {
+                throw new TypeError(`weightedPickObject(): expected an object of item: weight pairs, got ${describe(weightedItems)}`);
+            }
             const items = Object.keys(weightedItems);
             const weights = Object.values(weightedItems);
             return this.weightedPick(items, weights);
@@ -983,6 +1191,10 @@
          * @param {function} generator - Generator function (defaults to random())
          */
         array(length, generator = () => this.random()) {
+            assertCount(length, 'length', 'array()');
+            if (typeof generator !== 'function') {
+                throw new TypeError(`array(): generator must be a function, got ${describe(generator)}`);
+            }
             return Array.from({ length }, generator);
         }
 
@@ -1148,6 +1360,9 @@
          * @param {string} charset - Characters to choose from
          */
         char(charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789') {
+            if (typeof charset !== 'string' || charset.length === 0) {
+                throw new TypeError(`char(): charset must be a non-empty string, got ${describe(charset)}`);
+            }
             return charset[this.int(0, charset.length - 1)];
         }
 
@@ -1157,6 +1372,7 @@
          * @param {string} charset - Characters to choose from
          */
         string(length, charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789') {
+            assertCount(length, 'length', 'string()');
             let result = '';
             for (let i = 0; i < length; i++) {
                 result += this.char(charset);
@@ -1186,10 +1402,16 @@
          * Restore from a saved state
          */
         setState(savedState) {
+            if (savedState === null || typeof savedState !== 'object' ||
+                typeof savedState.algorithm !== 'string' ||
+                savedState.generatorState === null || typeof savedState.generatorState !== 'object') {
+                throw new TypeError('setState(): expected a state object returned by getState()');
+            }
             this.setSeed(0, savedState.algorithm); // Initialize with correct algorithm
             this.generator.setState(savedState.generatorState);
-            this._spareNormal = savedState.normalCache.spare;
-            this._hasSpareNormal = savedState.normalCache.hasSpare;
+            const cache = savedState.normalCache || {};
+            this._spareNormal = cache.hasSpare ? cache.spare : null;
+            this._hasSpareNormal = Boolean(cache.hasSpare);
         }
 
         /**
@@ -1230,7 +1452,7 @@
      * 1D/2D/3D Value Noise generator
      */
     class ValueNoise {
-        constructor(seed = Date.now()) {
+        constructor(seed = autoSeed()) {
             this.rng = new PRNG(seed, 'xoshiro128');
             this.permutation = this._generatePermutation();
         }
@@ -1352,7 +1574,7 @@
      * Simplex Noise implementation
      */
     class SimplexNoise {
-        constructor(seed = Date.now()) {
+        constructor(seed = autoSeed()) {
             this.rng = new PRNG(seed, 'xoshiro128');
             this.perm = new Uint8Array(512);
             this.permMod12 = new Uint8Array(512);
@@ -1614,7 +1836,7 @@
      * Classic Perlin Noise implementation
      */
     class PerlinNoise {
-        constructor(seed = Date.now()) {
+        constructor(seed = autoSeed()) {
             this.rng = new PRNG(seed, 'xoshiro128');
             this.perm = new Uint8Array(512);
             
@@ -1743,7 +1965,7 @@
      * Great for stone textures, biological patterns, cracked earth
      */
     class WorleyNoise {
-        constructor(seed = Date.now()) {
+        constructor(seed = autoSeed()) {
             this.rng = new PRNG(seed, 'xoshiro128');
             this.seed = seed;
         }
@@ -1885,7 +2107,7 @@
      * Great for mountain ridges, lightning, veins
      */
     class RidgedNoise {
-        constructor(seed = Date.now()) {
+        constructor(seed = autoSeed()) {
             this.simplex = new SimplexNoise(seed);
         }
 
@@ -1947,7 +2169,7 @@
      * Great for clouds, soft terrain
      */
     class BillowedNoise {
-        constructor(seed = Date.now()) {
+        constructor(seed = autoSeed()) {
             this.simplex = new SimplexNoise(seed);
         }
 
@@ -1995,6 +2217,9 @@
     // ============================================================
 
     const PRNG_Library = {
+        // Library version
+        version: '1.1.1',
+
         // Main class
         PRNG,
         

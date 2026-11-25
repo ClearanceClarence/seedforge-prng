@@ -1,17 +1,37 @@
 {
   "name": "seedforge-prng",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Advanced seedable PRNG library with multiple algorithms, statistical distributions, and noise generators for procedural generation, games, and simulations",
   "main": "dist/seedforge.js",
+  "module": "dist/seedforge.mjs",
   "types": "types/seedforge.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./types/seedforge.d.mts",
+        "default": "./dist/seedforge.mjs"
+      },
+      "require": {
+        "types": "./types/seedforge.d.ts",
+        "default": "./dist/seedforge.js"
+      }
+    },
+    "./dist/seedforge.js": "./dist/seedforge.js",
+    "./dist/seedforge.mjs": "./dist/seedforge.mjs",
+    "./package.json": "./package.json"
+  },
+  "unpkg": "dist/seedforge.js",
+  "jsdelivr": "dist/seedforge.js",
   "files": [
     "dist/",
     "types/",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "scripts": {
-    "test": "node test/test.js",
+    "build": "node scripts/build.js",
+    "test": "node scripts/build.js && node test/test.js && node test/esm.test.mjs",
     "test:browser": "open test/browser-test.html",
     "example": "node examples/examples.js",
     "prepublishOnly": "npm test"
@@ -60,7 +80,7 @@
   },
   "homepage": "https://github.com/ClearanceClarence/SeedForge#readme",
   "engines": {
-    "node": ">=12.0.0"
+    "node": ">=14.0.0"
   },
   "sideEffects": false
 }
