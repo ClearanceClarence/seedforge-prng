@@ -38,7 +38,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ClearanceClarence/SeedForge.git"
+    "url": "git+https://github.com/ClearanceClarence/seedforge-prng.git"
   },
   "keywords": [
     "prng",
@@ -76,9 +76,9 @@
   "author": "ClearanceClarence",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/ClearanceClarence/SeedForge/issues"
+    "url": "https://github.com/ClearanceClarence/seedforge-prng/issues"
   },
-  "homepage": "https://github.com/ClearanceClarence/SeedForge#readme",
+  "homepage": "https://github.com/ClearanceClarence/seedforge-prng#readme",
   "engines": {
     "node": ">=14.0.0"
   },
